@@ -21,12 +21,24 @@ def health():
 def reconcile(payload: ReconcileRequest):
     results = []
     for raw in payload.raw_records:
+        if not raw or not raw.strip():
+            raise HTTPException(
+                status_code=422,
+                detail="raw_records entries must be non-empty, non-whitespace strings."
+            )
         try:
             crew = build_crew(raw)
             output = crew.kickoff()
             parsed = json.loads(str(output))
             results.append(parsed)
+        except HTTPException:
+            raise
         except Exception as e:
             logger.exception("Reconciliation failed for record")
-            raise HTTPException(status_code=500, detail=str(e))
+            if "RateLimitError" in str(e) or "rate_limit_exceeded" in str(e):
+                raise HTTPException(
+                    status_code=503,
+                    detail="The AI service is temporarily rate-limited. Please try again in a few seconds."
+                )
+            raise HTTPException(status_code=500, detail="Internal processing error.")
     return {"results": results}
